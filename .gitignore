@@ -1,0 +1,12 @@
+# Env
+.env
+
+# Go binaries
+xn-wordle
+xn-wordle-linux-arm64
+xn-wordle-linux-amd64
+
+# Editor / OS
+.idea
+.vscode
+.DS_Store
