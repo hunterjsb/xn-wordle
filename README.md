@@ -12,10 +12,9 @@ Discord's official Wordle app posts a daily summary into the channel:
 X/6: @erin        ← did not solve
 ```
 
-This bot reads that history (via the REST API — no privileged Message Content
-intent needed), tallies each player, and exposes the standings as a slash
-command. The channel **is** the database, so there's nothing to persist: on
-startup it backfills the full history, then re-scans every 15 minutes.
+This bot reads that history, tallies each player, and exposes the standings as a
+slash command. The channel **is** the database, so there's nothing to persist:
+on startup it backfills the full history, then re-scans every 15 minutes.
 
 ## Scoring
 
@@ -53,9 +52,17 @@ cp .env.example .env
 go run .
 ```
 
-The bot needs **Read Message History** in `#wordle` and the
-`applications.commands` scope (re-invite the bot with that scope if the slash
-commands don't appear).
+## Permissions
+
+- **Read Message History** in `#wordle` — required.
+- **`applications.commands` scope** — required for the slash commands to appear.
+  Re-invite the bot with this scope if `/leaderboard` doesn't show up.
+- **Message Content Intent — not needed.** The bot reads history through the REST
+  API (`GET /channels/{id}/messages`), which returns message content for any bot
+  with Read Message History. The privileged Message Content Intent only gates the
+  real-time gateway stream, which we don't use — history is polled every 15
+  minutes instead. (Switching to live, event-driven updates *would* require that
+  intent plus an `on_message` handler.)
 
 ## Deploy
 
