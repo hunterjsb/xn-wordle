@@ -83,7 +83,7 @@ func handleLeaderboard(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	embed := infoEmbed("🟩 Wordle Leaderboard", fmt.Sprintf("```\n%s```", table))
 	embed.Footer = &discordgo.MessageEmbedFooter{
-		Text: fmt.Sprintf("%d days tracked · Pts: 1/6=6, 2/6=5 … 6/6=1, X=0 · Crwn = daily wins", board.Days()),
+		Text: fmt.Sprintf("%d days · Pts: 1/6=6 … 6/6=1, X=0 · Crwn=daily wins · FF=started but didn't finish (counts as 7)", board.Days()),
 	}
 	followupEmbed(s, i, embed)
 }
@@ -97,14 +97,14 @@ func renderLeaderboard(s *discordgo.Session) (string, bool) {
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-2s %-14s %4s %5s %5s %5s %4s\n", "#", "Player", "Pts", "Avg", "Crwn", "Win%", "Pld")
+	fmt.Fprintf(&b, "%-2s %-14s %4s %5s %5s %4s %5s %4s\n", "#", "Player", "Pts", "Avg", "Crwn", "FF", "Win%", "Pld")
 	for idx, p := range ranked {
 		name := resolveName(s, p.userID)
 		if len(name) > 14 {
 			name = name[:14]
 		}
-		fmt.Fprintf(&b, "%-2d %-14s %4d %5.2f %5d %4.0f%% %4d\n",
-			idx+1, name, p.points, p.avg(), p.crowns, p.winPct(), p.played)
+		fmt.Fprintf(&b, "%-2d %-14s %4d %5.2f %5d %4d %4.0f%% %4d\n",
+			idx+1, name, p.points, p.avg(), p.crowns, p.ff, p.winPct(), p.played)
 	}
 	return b.String(), true
 }

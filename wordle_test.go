@@ -15,7 +15,7 @@ const sample92 = "**Your group is on a 92 day streak!** 🔥🔥🔥 Here are ye
 	"X/6: <@371034483836846090>"
 
 func TestParseResults_Sample93(t *testing.T) {
-	got := parseResults(sample93)
+	got := parseResults(sample93, nil)
 	if got == nil {
 		t.Fatal("expected entries, got nil")
 	}
@@ -39,7 +39,7 @@ func TestParseResults_Sample93(t *testing.T) {
 }
 
 func TestParseResults_FailIsSeven(t *testing.T) {
-	got := parseResults(sample92)
+	got := parseResults(sample92, nil)
 	if e := got["371034483836846090"]; e.guesses != failGuesses {
 		t.Errorf("X/6 should be %d guesses, got %d", failGuesses, e.guesses)
 	}
@@ -54,9 +54,72 @@ func TestParseResults_NonResultsMessage(t *testing.T) {
 		"most often I start with the n word",
 		"",
 	} {
-		if got := parseResults(content); got != nil {
+		if got := parseResults(content, nil); got != nil {
 			t.Errorf("non-results message parsed to %v", got)
 		}
+	}
+}
+
+func TestParseResults_PlainTextNames(t *testing.T) {
+	// The app sometimes posts plain "@name" finishers instead of <@id> mentions.
+	const content = "**Your group is on an 80 day streak!** 🔥 Here are yesterday's results:\n" +
+		"👑 3/6: @samboyd\n6/6: @pogoyim @temple"
+	name2id := map[string]string{"samboyd": "111", "pogoyim": "222", "temple": "333"}
+
+	// Without a name map, plain-text finishers are unresolvable.
+	if got := parseResults(content, nil); got != nil {
+		t.Errorf("expected nil without name map, got %v", got)
+	}
+	// With the map, all three resolve.
+	got := parseResults(content, name2id)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 finishers, got %d (%v)", len(got), got)
+	}
+	if e := got["111"]; e.guesses != 3 || !e.crown {
+		t.Errorf("samboyd: want 3/crown, got %d/%v", e.guesses, e.crown)
+	}
+	if e := got["333"]; e.guesses != 6 || e.crown {
+		t.Errorf("temple: want 6/no-crown, got %d/%v", e.guesses, e.crown)
+	}
+}
+
+func TestParsePlaying(t *testing.T) {
+	cases := []struct {
+		content   string
+		want      []string
+		wantOther bool
+	}{
+		{"temple was playing", []string{"temple"}, false},
+		{"david wolfze and samboyd were playing", []string{"david wolfze", "samboyd"}, false},
+		{"tft? is playing", []string{"tft?"}, false},
+		{"temple are playing", []string{"temple"}, false},
+		{"pogoyim and 2 others were playing", []string{"pogoyim"}, true},
+		{"a, b and c were playing", []string{"a", "b", "c"}, false},
+	}
+	for _, c := range cases {
+		got, other := parsePlaying(c.content)
+		if other != c.wantOther {
+			t.Errorf("%q: hadOthers=%v want %v", c.content, other, c.wantOther)
+		}
+		if len(got) != len(c.want) {
+			t.Errorf("%q: got %v want %v", c.content, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("%q: got %v want %v", c.content, got, c.want)
+				break
+			}
+		}
+	}
+}
+
+func TestIsPlaying(t *testing.T) {
+	if !isPlaying("temple was playing") {
+		t.Error("expected playing notice to be detected")
+	}
+	if isPlaying(sample93) {
+		t.Error("results summary must not be treated as a playing notice")
 	}
 }
 
