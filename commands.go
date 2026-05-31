@@ -99,13 +99,16 @@ func handleLeaderboard(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if idx < len(medals) {
 			rank = medals[idx]
 		}
-		text := fmt.Sprintf("**%s %s** — %d pts\n-# %.2f avg · %d 👑 · %d FF · %.0f%% won · %d played",
+		text := fmt.Sprintf("### %s %s\n%d pts  ·  %.2f avg  ·  %d 👑  ·  %d FF  ·  %.0f%% won  ·  %d played",
 			rank, resolveName(s, p.userID), p.points, p.avg(), p.crowns, p.ff, p.winPct(), p.played)
 		section := discordgo.Section{
 			Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: text}},
 		}
 		if url := resolveAvatar(s, p.userID); url != "" {
 			section.Accessory = discordgo.Thumbnail{Media: discordgo.UnfurledMediaItem{URL: url}}
+		}
+		if idx > 0 {
+			container.Components = append(container.Components, discordgo.Separator{})
 		}
 		container.Components = append(container.Components, section)
 	}
