@@ -52,18 +52,6 @@ cp .env.example .env
 go run .
 ```
 
-## Permissions
-
-- **Read Message History** in `#wordle` — required.
-- **`applications.commands` scope** — required for the slash commands to appear.
-  Re-invite the bot with this scope if `/leaderboard` doesn't show up.
-- **Message Content Intent — not needed.** The bot reads history through the REST
-  API (`GET /channels/{id}/messages`), which returns message content for any bot
-  with Read Message History. The privileged Message Content Intent only gates the
-  real-time gateway stream, which we don't use — history is polled every 15
-  minutes instead. (Switching to live, event-driven updates *would* require that
-  intent plus an `on_message` handler.)
-
 ## Deploy
 
 Push a `v*` tag to build `linux/{arm64,amd64}` binaries via GitHub Releases:
@@ -93,3 +81,15 @@ WantedBy=multi-user.target
 ```bash
 sudo systemctl enable --now xn-wordle
 ```
+
+## Permissions
+
+- **Read Message History** in `#wordle` — required.
+- **`applications.commands` scope** — required for the slash commands to appear.
+  Re-invite the bot with this scope if `/leaderboard` doesn't show up.
+- **Message Content Intent — not needed.** The bot reads history through the REST
+  API (`GET /channels/{id}/messages`), which returns message content for any bot
+  with Read Message History. The privileged Message Content Intent only gates the
+  real-time gateway stream, which we don't use — history is polled every 15
+  minutes instead. (Switching to live, event-driven updates *would* require that
+  intent plus an `on_message` handler.)
