@@ -28,12 +28,8 @@ on startup it backfills the full history, then re-scans every 15 minutes.
 | 6/6 | 1 |
 | X/6 | 0 |
 
-An **FF** ("failure to finish") is a day where a player *started* the puzzle —
-the app announced "*X was playing*" — but never appears in the results. An FF
-counts as **7 guesses / 0 points**, same as an `X/6`, but is tracked in its own
-column. FF detection is best-effort: when the app anonymizes players as "…and 2
-others were playing" their starts can't be attributed, and players who never
-resolve to a server member are skipped (both undercount rather than miscount).
+An **FF** ("failure to finish") — a player started the puzzle but never finished
+it — is scored exactly like an `X/6`: a failed puzzle worth 0 points.
 
 `/leaderboard` ranks by total **Pts** (tie-break: lowest average guesses, then
 most crowns) and shows points, average guesses, 👑 crowns (daily wins), FF, win %,
