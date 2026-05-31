@@ -82,26 +82,46 @@ func handleLeaderboard(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
+	// Components V2: a green-accented container with one avatar "card" per player.
+	// Primary stat (points) is emphasized; the rest is rendered as subtext (-#) to
+	// keep each row calm instead of a dense bolded line.
+	accent := colorInfo
 	medals := []string{"🥇", "🥈", "🥉"}
-	embed := infoEmbed("🟩 Wordle Leaderboard", "")
+	container := discordgo.Container{
+		AccentColor: &accent,
+		Components: []discordgo.MessageComponent{
+			discordgo.TextDisplay{Content: "## 🟩 Wordle Leaderboard"},
+			discordgo.Separator{},
+		},
+	}
 	for idx, p := range ranked {
-		rank := fmt.Sprintf("`#%d`", idx+1)
+		rank := fmt.Sprintf("#%d", idx+1)
 		if idx < len(medals) {
 			rank = medals[idx]
 		}
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name: fmt.Sprintf("%s  %s", rank, resolveName(s, p.userID)),
-			Value: fmt.Sprintf("**%d** pts · %.2f avg · %d 👑 · %d FF · %.0f%% win · %d played",
-				p.points, p.avg(), p.crowns, p.ff, p.winPct(), p.played),
-		})
+		text := fmt.Sprintf("**%s %s** — %d pts\n-# %.2f avg · %d 👑 · %d FF · %.0f%% won · %d played",
+			rank, resolveName(s, p.userID), p.points, p.avg(), p.crowns, p.ff, p.winPct(), p.played)
+		section := discordgo.Section{
+			Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: text}},
+		}
+		if url := resolveAvatar(s, p.userID); url != "" {
+			section.Accessory = discordgo.Thumbnail{Media: discordgo.UnfurledMediaItem{URL: url}}
+		}
+		container.Components = append(container.Components, section)
 	}
-	if url := resolveAvatar(s, ranked[0].userID); url != "" {
-		embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: url}
+	container.Components = append(container.Components,
+		discordgo.Separator{},
+		discordgo.TextDisplay{Content: fmt.Sprintf(
+			"-# %d days · Pts 1/6=6 … 6/6=1, X=0 · 👑 daily wins · FF = started but didn't finish",
+			board.Days())},
+	)
+
+	if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		Flags:      discordgo.MessageFlagsIsComponentsV2,
+		Components: []discordgo.MessageComponent{container},
+	}); err != nil {
+		followupEmbed(s, i, errorEmbed("Leaderboard", err.Error()))
 	}
-	embed.Footer = &discordgo.MessageEmbedFooter{
-		Text: fmt.Sprintf("%d days · Pts: 1/6=6 … 6/6=1, X=0 · 👑 daily wins · FF started but didn't finish", board.Days()),
-	}
-	followupEmbed(s, i, embed)
 }
 
 // renderLeaderboard builds the aligned standings table. The second return value
