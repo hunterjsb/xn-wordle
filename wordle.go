@@ -335,6 +335,9 @@ func (l *Leaderboard) Refresh(s *discordgo.Session, channelID string) error {
 	l.stats = stats
 	l.days = days
 	l.mu.Unlock()
+
+	// Drop memoized names/avatars so renames and avatar changes are picked up.
+	clearResolveCaches()
 	return nil
 }
 

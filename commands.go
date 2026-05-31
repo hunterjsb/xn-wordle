@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -75,15 +76,30 @@ func followupEmbed(s *discordgo.Session, i *discordgo.InteractionCreate, embed *
 func handleLeaderboard(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	deferResponse(s, i)
 
-	table, ok := renderLeaderboard(s)
-	if !ok {
+	ranked := board.Ranked()
+	if len(ranked) == 0 {
 		followupEmbed(s, i, infoEmbed("Wordle Leaderboard", "No results recorded yet — check back after the next daily summary."))
 		return
 	}
 
-	embed := infoEmbed("🟩 Wordle Leaderboard", fmt.Sprintf("```\n%s```", table))
+	medals := []string{"🥇", "🥈", "🥉"}
+	embed := infoEmbed("🟩 Wordle Leaderboard", "")
+	for idx, p := range ranked {
+		rank := fmt.Sprintf("`#%d`", idx+1)
+		if idx < len(medals) {
+			rank = medals[idx]
+		}
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name: fmt.Sprintf("%s  %s", rank, resolveName(s, p.userID)),
+			Value: fmt.Sprintf("**%d** pts · %.2f avg · %d 👑 · %d FF · %.0f%% win · %d played",
+				p.points, p.avg(), p.crowns, p.ff, p.winPct(), p.played),
+		})
+	}
+	if url := resolveAvatar(s, ranked[0].userID); url != "" {
+		embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: url}
+	}
 	embed.Footer = &discordgo.MessageEmbedFooter{
-		Text: fmt.Sprintf("%d days · Pts: 1/6=6 … 6/6=1, X=0 · Crwn=daily wins · FF=started but didn't finish (counts as 7)", board.Days()),
+		Text: fmt.Sprintf("%d days · Pts: 1/6=6 … 6/6=1, X=0 · 👑 daily wins · FF started but didn't finish", board.Days()),
 	}
 	followupEmbed(s, i, embed)
 }
@@ -119,14 +135,34 @@ func handleRefresh(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		fmt.Sprintf("Re-scanned #wordle: %d days tracked across %d players.", board.Days(), board.Players())))
 }
 
-// nameCache memoizes resolved display names to avoid hammering the REST API.
-var nameCache = map[string]string{}
+// Resolved display names and avatars are memoized to avoid hammering the REST API
+// on every render. The caches are cleared on each Refresh (see clearResolveCaches)
+// so nickname/avatar changes show up within a refresh interval, while history stays
+// keyed by the immutable user ID. The mutex guards against the refresh goroutine
+// clearing the maps while a /leaderboard handler reads them.
+var (
+	cacheMu     sync.Mutex
+	nameCache   = map[string]string{}
+	avatarCache = map[string]string{}
+)
 
-// resolveName returns a player's server nickname, global name, or username.
+// clearResolveCaches drops memoized names/avatars so they re-resolve with fresh data.
+func clearResolveCaches() {
+	cacheMu.Lock()
+	nameCache = map[string]string{}
+	avatarCache = map[string]string{}
+	cacheMu.Unlock()
+}
+
+// resolveName returns a player's current server nickname, global name, or username.
 func resolveName(s *discordgo.Session, userID string) string {
-	if n, ok := nameCache[userID]; ok {
+	cacheMu.Lock()
+	n, ok := nameCache[userID]
+	cacheMu.Unlock()
+	if ok {
 		return n
 	}
+
 	name := userID
 	if guildID != "" {
 		if m, err := s.GuildMember(guildID, userID); err == nil {
@@ -149,6 +185,29 @@ func resolveName(s *discordgo.Session, userID string) string {
 			}
 		}
 	}
+
+	cacheMu.Lock()
 	nameCache[userID] = name
+	cacheMu.Unlock()
 	return name
+}
+
+// resolveAvatar returns a player's avatar URL (empty string if it can't be fetched).
+func resolveAvatar(s *discordgo.Session, userID string) string {
+	cacheMu.Lock()
+	a, ok := avatarCache[userID]
+	cacheMu.Unlock()
+	if ok {
+		return a
+	}
+
+	url := ""
+	if u, err := s.User(userID); err == nil {
+		url = u.AvatarURL("128")
+	}
+
+	cacheMu.Lock()
+	avatarCache[userID] = url
+	cacheMu.Unlock()
+	return url
 }
