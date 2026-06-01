@@ -10,9 +10,10 @@ xn-wordle-linux-amd64
 bootstrap
 bootstrap.zip
 
-# Pulumi (local venv / caches)
+# Pulumi (local venv / caches / passphrase)
 infra/pulumi/venv/
 infra/pulumi/__pycache__/
+infra/pulumi/.passphrase
 
 # Editor / OS
 .idea

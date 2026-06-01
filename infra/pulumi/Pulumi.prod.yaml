@@ -7,3 +7,7 @@ config:
   xn-wordle:scheduleCron: "cron(0 15 * * ? *)"
   # Set the bot token as an encrypted secret (do NOT commit it in plaintext):
   #   pulumi config set --secret xn-wordle:discordToken <token>
+
+  xn-wordle:discordToken:
+    secure: v1:8L+ObsIVE0lDDs8F:iU9pKYCnnWavsC0FaNLYdLHhRoQxnI8i1qpwq5uYjIrSmLf4miLa1t8Gio+6TcdFNpeHFU2fYF/OoJuh1q291bRzCkHDDaKB9WRG9gC7lKSgX7cQKzE=
+encryptionsalt: v1:QtD50NMiUPg=:v1:AQJvrPbltWWKDGdq:C4z1iDy1eMwW7Q0sVYKRdHFKqZ3O0Q==
