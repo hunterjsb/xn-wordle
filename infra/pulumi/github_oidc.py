@@ -1,9 +1,10 @@
 """GitHub Actions OIDC trust for CI-driven Lambda code deploys.
 
-Creates an OIDC provider (one per AWS account) and a single IAM role GitHub
-Actions can assume to push new xn-wordle Lambda code via
-`aws lambda update-function-code`. No static keys in CI. Pulumi-managed infra
-changes stay manual. Trust is scoped to this repo, master branch + v* tags only.
+References the account's existing GitHub OIDC provider (there's one per account —
+already created by another project) and defines a single IAM role GitHub Actions
+can assume to push new xn-wordle Lambda code via `aws lambda update-function-code`.
+No static keys in CI. Pulumi-managed infra changes stay manual. Trust is scoped to
+this repo, master branch + v* tags only.
 """
 
 import json
@@ -15,40 +16,34 @@ REPO = "hunterjsb/xn-wordle"
 
 account_id = aws.get_caller_identity().account_id
 
-# OIDC provider for GitHub Actions. One per AWS account; import if pre-existing.
-oidc_provider = aws.iam.OpenIdConnectProvider(
-    "github-actions-oidc",
-    url="https://token.actions.githubusercontent.com",
-    client_id_lists=["sts.amazonaws.com"],
-    # AWS still requires a thumbprint but no longer validates it (STS verifies the
-    # JWT against GitHub's JWKS instead).
-    thumbprint_lists=["6938fd4d98bab03faadb97b34396831e3780aea1"],
+# The GitHub OIDC provider is account-global and already exists; reference its
+# deterministic ARN rather than managing the resource here.
+oidc_provider_arn = (
+    f"arn:aws:iam::{account_id}:oidc-provider/token.actions.githubusercontent.com"
 )
 
-trust_policy = oidc_provider.arn.apply(
-    lambda arn: json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Principal": {"Federated": arn},
-                    "Action": "sts:AssumeRoleWithWebIdentity",
-                    "Condition": {
-                        "StringEquals": {
-                            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-                        },
-                        "StringLike": {
-                            "token.actions.githubusercontent.com:sub": [
-                                f"repo:{REPO}:ref:refs/heads/master",
-                                f"repo:{REPO}:ref:refs/tags/v*",
-                            ]
-                        },
+trust_policy = json.dumps(
+    {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {"Federated": oidc_provider_arn},
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                    "StringEquals": {
+                        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
                     },
-                }
-            ],
-        }
-    )
+                    "StringLike": {
+                        "token.actions.githubusercontent.com:sub": [
+                            f"repo:{REPO}:ref:refs/heads/master",
+                            f"repo:{REPO}:ref:refs/tags/v*",
+                        ]
+                    },
+                },
+            }
+        ],
+    }
 )
 
 ci_role = aws.iam.Role(

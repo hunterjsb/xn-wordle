@@ -12,13 +12,14 @@ EventBridge (cron, UTC) ──► Lambda xn-wordle ──► posts leaderboard t
 - `github_oidc.py` — GitHub OIDC provider + scoped `xn-wordle-ci-deploy` role (no static keys in CI)
 - Region: `us-east-1`. State: `s3://xn-wordle-pulumi-state-350985642081`.
 
-## First deploy (run locally, personal account)
+## First deploy (run locally)
 
-> All AWS calls use the **personal** profile. The default profile is the Gnosis
-> work account, so set this explicitly for the whole session:
+> Use the **`xn-wordle`** profile — a dedicated IAM user (`xn-wordle-deploy`)
+> scoped to exactly this stack's resources (no root keys, no work account). The
+> default profile is the Gnosis work account, so set this for the whole session:
 >
 > ```bash
-> export AWS_PROFILE=personal
+> export AWS_PROFILE=xn-wordle
 > ```
 
 1. **Create the Pulumi state bucket** (one time):

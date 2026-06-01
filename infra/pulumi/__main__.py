@@ -8,11 +8,11 @@ post the daily Wordle leaderboard. Pulumi owns configuration; CI owns the binary
 import pulumi
 
 from lambda_post import lambda_function, log_group, schedule_rule
-from github_oidc import ci_role, oidc_provider
+from github_oidc import ci_role, oidc_provider_arn
 
 pulumi.export("lambda_arn", lambda_function.arn)
 pulumi.export("lambda_name", lambda_function.name)
 pulumi.export("log_group", log_group.name)
 pulumi.export("schedule_rule", schedule_rule.name)
-pulumi.export("github_oidc_provider_arn", oidc_provider.arn)
+pulumi.export("github_oidc_provider_arn", oidc_provider_arn)
 pulumi.export("ci_deploy_role_arn", ci_role.arn)
