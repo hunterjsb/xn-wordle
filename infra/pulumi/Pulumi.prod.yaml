@@ -1,0 +1,9 @@
+config:
+  xn-wordle:guildId: "537761321052274698"
+  xn-wordle:wordleChannelId: "1476723800833003723"
+  # Optional — channel to post into; defaults to wordleChannelId (#wordle) when unset:
+  # xn-wordle:leaderboardChannelId: ""
+  # EventBridge cron is UTC (no timezone). 15:00 UTC ≈ 10–11am US Eastern.
+  xn-wordle:scheduleCron: "cron(0 15 * * ? *)"
+  # Set the bot token as an encrypted secret (do NOT commit it in plaintext):
+  #   pulumi config set --secret xn-wordle:discordToken <token>

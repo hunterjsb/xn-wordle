@@ -6,6 +6,14 @@ xn-wordle
 xn-wordle-linux-arm64
 xn-wordle-linux-amd64
 
+# Lambda build artifacts
+bootstrap
+bootstrap.zip
+
+# Pulumi (local venv / caches)
+infra/pulumi/venv/
+infra/pulumi/__pycache__/
+
 # Editor / OS
 .idea
 .vscode

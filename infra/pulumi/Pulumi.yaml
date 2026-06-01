@@ -1,0 +1,11 @@
+name: xn-wordle
+description: xn-wordle scheduled Lambda — daily Wordle leaderboard post
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+backend:
+  url: s3://xn-wordle-pulumi-state-350985642081
+config:
+  aws:region:
+    value: us-east-1

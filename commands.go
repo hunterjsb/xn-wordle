@@ -76,15 +76,30 @@ func followupEmbed(s *discordgo.Session, i *discordgo.InteractionCreate, embed *
 func handleLeaderboard(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	deferResponse(s, i)
 
-	ranked := board.Ranked()
-	if len(ranked) == 0 {
+	container, ok := buildLeaderboardContainer(s)
+	if !ok {
 		followupEmbed(s, i, infoEmbed("Wordle Leaderboard", "No results recorded yet — check back after the next daily summary."))
 		return
 	}
 
-	// Components V2: a green-accented container with one avatar "card" per player.
-	// Primary stat (points) is emphasized; the rest is rendered as subtext (-#) to
-	// keep each row calm instead of a dense bolded line.
+	if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		Flags:      discordgo.MessageFlagsIsComponentsV2,
+		Components: []discordgo.MessageComponent{*container},
+	}); err != nil {
+		followupEmbed(s, i, errorEmbed("Leaderboard", err.Error()))
+	}
+}
+
+// buildLeaderboardContainer builds the Components V2 leaderboard: a green-accented
+// container with one avatar "card" per player. Primary stat (points) is emphasized;
+// the rest is normal text. Shared by the slash command and the scheduled Lambda post.
+// The second return value is false when there are no results yet.
+func buildLeaderboardContainer(s *discordgo.Session) (*discordgo.Container, bool) {
+	ranked := board.Ranked()
+	if len(ranked) == 0 {
+		return nil, false
+	}
+
 	accent := colorInfo
 	medals := []string{"🥇", "🥈", "🥉"}
 	container := discordgo.Container{
@@ -118,13 +133,7 @@ func handleLeaderboard(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			"-# %d days · Pts 1/6=6 … 6/6=1, X=0 · 👑 daily wins · FF = started but didn't finish",
 			board.Days())},
 	)
-
-	if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-		Flags:      discordgo.MessageFlagsIsComponentsV2,
-		Components: []discordgo.MessageComponent{container},
-	}); err != nil {
-		followupEmbed(s, i, errorEmbed("Leaderboard", err.Error()))
-	}
+	return &container, true
 }
 
 // renderLeaderboard builds the aligned standings table. The second return value

@@ -1,3 +1,8 @@
+//go:build !lambda
+
+// Command xn-wordle runs the bot as a long-lived gateway process (slash commands
+// + periodic refresh). The scheduled-post Lambda build (-tags lambda) uses lambda.go
+// instead; shared logic lives in config.go / wordle.go / commands.go.
 package main
 
 import (
@@ -8,36 +13,21 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/joho/godotenv"
-)
-
-// Globally available config
-var (
-	channelID string
-	guildID   string
-
-	board *Leaderboard
 )
 
 // refreshInterval controls how often the channel is re-scanned for new daily results.
 const refreshInterval = 15 * time.Minute
 
-func init() {
-	// Try loading .env — optional, env vars may come from a systemd EnvironmentFile instead.
-	if envFile := os.Getenv("ENV_FILE"); envFile != "" {
-		_ = godotenv.Load(envFile)
-	} else {
-		_ = godotenv.Load(".env")
-	}
-
-	channelID = os.Getenv("WORDLE_CHANNEL_ID")
-	if channelID == "" {
-		fmt.Println("Warning: WORDLE_CHANNEL_ID is not set.")
-	}
-	guildID = os.Getenv("DISCORD_GUILD_ID") // Empty string = global commands
-}
-
 func main() {
+	// One-shot: run the scheduled-post path locally (same code the Lambda runs),
+	// then exit. Handy for testing the daily post or posting on demand.
+	if os.Getenv("WORDLE_POST_ONCE") == "1" {
+		if err := runScheduledPost(); err != nil {
+			fmt.Println("scheduled post failed:", err)
+		}
+		return
+	}
+
 	token := os.Getenv("DISCORD_TOKEN")
 	if token == "" {
 		fmt.Println("Error: DISCORD_TOKEN is not set. Bot cannot start.")

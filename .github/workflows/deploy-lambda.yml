@@ -1,0 +1,62 @@
+name: Deploy xn-wordle Lambda
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-xn-wordle
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+
+permissions:
+  id-token: write   # OIDC for AWS role assumption
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build Lambda zip (arm64, provided.al2023)
+        run: |
+          GOOS=linux GOARCH=arm64 go build -tags lambda -o bootstrap .
+          zip bootstrap.zip bootstrap
+          ls -lh bootstrap.zip
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::350985642081:role/xn-wordle-ci-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      # CI changes only the running binary. Infra config (env vars, schedule,
+      # memory, role) goes through `pulumi up` locally — see infra/pulumi.
+      - name: Update Lambda function code
+        run: |
+          aws lambda update-function-code \
+            --function-name xn-wordle \
+            --zip-file fileb://bootstrap.zip \
+            --publish \
+            --query '{Version:Version,LastModified:LastModified,CodeSha256:CodeSha256}' \
+            --output table
+
+      - name: Wait for update to settle
+        run: |
+          aws lambda wait function-updated --function-name xn-wordle
+          aws lambda get-function-configuration \
+            --function-name xn-wordle \
+            --query '{State:State,LastUpdateStatus:LastUpdateStatus}' \
+            --output table
