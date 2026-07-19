@@ -28,7 +28,7 @@ func runScheduledPost() error {
 	}
 	log.Printf("scanned %d days, %d players", board.Days(), board.Players())
 
-	container, ok := buildLeaderboardContainer(dg)
+	pages, ok := buildLeaderboardContainers(dg)
 	if !ok {
 		log.Println("no results yet; nothing to post")
 		return nil
@@ -39,13 +39,15 @@ func runScheduledPost() error {
 	if postCh == "" {
 		postCh = channelID
 	}
-	msg, err := dg.ChannelMessageSendComplex(postCh, &discordgo.MessageSend{
-		Flags:      discordgo.MessageFlagsIsComponentsV2,
-		Components: []discordgo.MessageComponent{*container},
-	})
-	if err != nil {
-		return fmt.Errorf("post leaderboard: %w", err)
+	for idx, page := range pages {
+		msg, err := dg.ChannelMessageSendComplex(postCh, &discordgo.MessageSend{
+			Flags:      discordgo.MessageFlagsIsComponentsV2,
+			Components: []discordgo.MessageComponent{*page},
+		})
+		if err != nil {
+			return fmt.Errorf("post leaderboard (page %d/%d): %w", idx+1, len(pages), err)
+		}
+		log.Printf("posted leaderboard message %s to channel %s (page %d/%d)", msg.ID, postCh, idx+1, len(pages))
 	}
-	log.Printf("posted leaderboard message %s to channel %s", msg.ID, postCh)
 	return nil
 }

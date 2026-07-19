@@ -76,64 +76,93 @@ func followupEmbed(s *discordgo.Session, i *discordgo.InteractionCreate, embed *
 func handleLeaderboard(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	deferResponse(s, i)
 
-	container, ok := buildLeaderboardContainer(s)
+	pages, ok := buildLeaderboardContainers(s)
 	if !ok {
 		followupEmbed(s, i, infoEmbed("Wordle Leaderboard", "No results recorded yet — check back after the next daily summary."))
 		return
 	}
 
-	if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-		Flags:      discordgo.MessageFlagsIsComponentsV2,
-		Components: []discordgo.MessageComponent{*container},
-	}); err != nil {
-		followupEmbed(s, i, errorEmbed("Leaderboard", err.Error()))
+	for _, page := range pages {
+		if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Flags:      discordgo.MessageFlagsIsComponentsV2,
+			Components: []discordgo.MessageComponent{*page},
+		}); err != nil {
+			followupEmbed(s, i, errorEmbed("Leaderboard", err.Error()))
+			return
+		}
 	}
 }
 
-// buildLeaderboardContainer builds the Components V2 leaderboard: a green-accented
-// container with one avatar "card" per player. Primary stat (points) is emphasized;
-// the rest is normal text. Shared by the slash command and the scheduled Lambda post.
-// The second return value is false when there are no results yet.
-func buildLeaderboardContainer(s *discordgo.Session) (*discordgo.Container, bool) {
+// playersPerPage caps how many player cards go in one Components V2 container.
+// Each card is ~4 components (separator + section + text + avatar thumbnail),
+// plus a couple more for the header/footer text, so 8 cards keeps every page
+// safely under Discord's 40-component-per-message limit even as the roster
+// grows — past that it just spills into another message instead of erroring.
+const playersPerPage = 8
+
+// buildLeaderboardContainers builds the Components V2 leaderboard, split across
+// as many green-accented containers as needed: one avatar "card" per player,
+// chunked so no single container can exceed Discord's component cap. Primary
+// stat (points) is emphasized; the rest is normal text. Shared by the slash
+// command and the scheduled Lambda post. The second return value is false when
+// there are no results yet.
+func buildLeaderboardContainers(s *discordgo.Session) ([]*discordgo.Container, bool) {
 	ranked := board.Ranked()
 	if len(ranked) == 0 {
 		return nil, false
 	}
 
-	accent := colorInfo
 	medals := []string{"🥇", "🥈", "🥉"}
-	container := discordgo.Container{
-		AccentColor: &accent,
-		Components: []discordgo.MessageComponent{
-			discordgo.TextDisplay{Content: "## 🟩 Wordle Leaderboard"},
-			discordgo.Separator{},
-		},
+	var pages []*discordgo.Container
+	for start := 0; start < len(ranked); start += playersPerPage {
+		end := start + playersPerPage
+		if end > len(ranked) {
+			end = len(ranked)
+		}
+		chunk := ranked[start:end]
+
+		title := "## 🟩 Wordle Leaderboard"
+		if len(ranked) > playersPerPage {
+			title = fmt.Sprintf("## 🟩 Wordle Leaderboard (%d–%d of %d)", start+1, end, len(ranked))
+		}
+		accent := colorInfo
+		container := discordgo.Container{
+			AccentColor: &accent,
+			Components: []discordgo.MessageComponent{
+				discordgo.TextDisplay{Content: title},
+				discordgo.Separator{},
+			},
+		}
+		for i, p := range chunk {
+			idx := start + i
+			rank := fmt.Sprintf("#%d", idx+1)
+			if idx < len(medals) {
+				rank = medals[idx]
+			}
+			text := fmt.Sprintf("### %s %s\n%d pts  ·  %.2f avg  ·  %d 👑  ·  %d FF  ·  %.0f%% won  ·  %d played",
+				rank, resolveName(s, p.userID), p.points, p.avg(), p.crowns, p.ff, p.winPct(), p.played)
+			section := discordgo.Section{
+				Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: text}},
+			}
+			if url := resolveAvatar(s, p.userID); url != "" {
+				section.Accessory = discordgo.Thumbnail{Media: discordgo.UnfurledMediaItem{URL: url}}
+			}
+			if i > 0 {
+				container.Components = append(container.Components, discordgo.Separator{})
+			}
+			container.Components = append(container.Components, section)
+		}
+		if end == len(ranked) {
+			container.Components = append(container.Components,
+				discordgo.Separator{},
+				discordgo.TextDisplay{Content: fmt.Sprintf(
+					"-# %d days · Pts 1/6=6 … 6/6=1, X=0 · 👑 daily wins · FF = started but didn't finish",
+					board.Days())},
+			)
+		}
+		pages = append(pages, &container)
 	}
-	for idx, p := range ranked {
-		rank := fmt.Sprintf("#%d", idx+1)
-		if idx < len(medals) {
-			rank = medals[idx]
-		}
-		text := fmt.Sprintf("### %s %s\n%d pts  ·  %.2f avg  ·  %d 👑  ·  %d FF  ·  %.0f%% won  ·  %d played",
-			rank, resolveName(s, p.userID), p.points, p.avg(), p.crowns, p.ff, p.winPct(), p.played)
-		section := discordgo.Section{
-			Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: text}},
-		}
-		if url := resolveAvatar(s, p.userID); url != "" {
-			section.Accessory = discordgo.Thumbnail{Media: discordgo.UnfurledMediaItem{URL: url}}
-		}
-		if idx > 0 {
-			container.Components = append(container.Components, discordgo.Separator{})
-		}
-		container.Components = append(container.Components, section)
-	}
-	container.Components = append(container.Components,
-		discordgo.Separator{},
-		discordgo.TextDisplay{Content: fmt.Sprintf(
-			"-# %d days · Pts 1/6=6 … 6/6=1, X=0 · 👑 daily wins · FF = started but didn't finish",
-			board.Days())},
-	)
-	return &container, true
+	return pages, true
 }
 
 // renderLeaderboard builds the aligned standings table. The second return value
