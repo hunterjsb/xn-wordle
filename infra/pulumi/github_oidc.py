@@ -12,7 +12,7 @@ import json
 import pulumi_aws as aws
 
 REGION = "us-east-1"
-REPO = "hunterjsb/xn-wordle"
+REPO = "hunter-jsb/xn-wordle"
 
 account_id = aws.get_caller_identity().account_id
 
