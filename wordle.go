@@ -33,6 +33,12 @@ var (
 	// finishers as plain text instead of real <@id> mentions; those are resolved
 	// through the name map.
 	plainNameRe = regexp.MustCompile(`@([^\s@]+)`)
+	// avatarUserIDRe pulls the user ID out of a Discord CDN avatar URL, e.g.
+	// https://cdn.discordapp.com/avatars/123456789/abcdef.png.
+	avatarUserIDRe = regexp.MustCompile(`/avatars/(\d+)/`)
+	// leaderboardRowRe matches one player card's text in the bot's own posted
+	// leaderboard, e.g. "### #3 AEGIS\n253 pts  ...", capturing the display name.
+	leaderboardRowRe = regexp.MustCompile(`(?s)^### \S+ (.+?)\n\d+ pts`)
 )
 
 // playingVerbs are the trailing phrases the Wordle app uses to announce a start,
@@ -73,10 +79,8 @@ func parseResults(content string, name2id map[string]string) map[string]dayEntry
 		if name2id != nil {
 			// Strip real mentions first so their inner "@id" isn't re-matched.
 			plain := mentionRe.ReplaceAllString(rest, "")
-			for _, pm := range plainNameRe.FindAllStringSubmatch(plain, -1) {
-				if uid, ok := name2id[strings.ToLower(pm[1])]; ok {
-					entries[uid] = dayEntry{guesses: guesses, crown: hasCrown}
-				}
+			for uid := range resolvePlainNames(plain, name2id) {
+				entries[uid] = dayEntry{guesses: guesses, crown: hasCrown}
 			}
 		}
 	}
@@ -84,6 +88,56 @@ func parseResults(content string, name2id map[string]string) map[string]dayEntry
 		return nil
 	}
 	return entries
+}
+
+// resolvePlainNames matches known aliases (name2id keys, which may be
+// multi-word — e.g. "david wolfze") against the text remaining after real
+// mentions are stripped. Longest alias first, by word count, so a two-word
+// name matches as a whole instead of a single-token regex silently capturing
+// just its first word and leaving the rest (and thus the whole name) unresolved.
+func resolvePlainNames(rest string, name2id map[string]string) map[string]bool {
+	tokens := strings.Fields(strings.ReplaceAll(rest, "@", " "))
+	if len(tokens) == 0 {
+		return nil
+	}
+
+	type alias struct {
+		words []string
+		id    string
+	}
+	aliases := make([]alias, 0, len(name2id))
+	for name, id := range name2id {
+		if words := strings.Fields(name); len(words) > 0 {
+			aliases = append(aliases, alias{words: words, id: id})
+		}
+	}
+	sort.Slice(aliases, func(i, j int) bool { return len(aliases[i].words) > len(aliases[j].words) })
+
+	used := make([]bool, len(tokens))
+	resolved := map[string]bool{}
+	for _, a := range aliases {
+		n := len(a.words)
+		for i := 0; i+n <= len(tokens); i++ {
+			if used[i] {
+				continue
+			}
+			match := true
+			for j := 0; j < n; j++ {
+				if used[i+j] || !strings.EqualFold(tokens[i+j], a.words[j]) {
+					match = false
+					break
+				}
+			}
+			if match {
+				resolved[a.id] = true
+				for j := 0; j < n; j++ {
+					used[i+j] = true
+				}
+				break
+			}
+		}
+	}
+	return resolved
 }
 
 // isPlaying reports whether a message is one of the app's "X was playing" notices.
@@ -237,6 +291,57 @@ func buildNameMap(s *discordgo.Session, finisherIDs, playingNames map[string]boo
 	return name2id
 }
 
+// historicalAliases mines the bot's own past leaderboard posts for every
+// display name a player has ever been shown under, keyed by user ID (read off
+// the avatar thumbnail's CDN URL on each player card). A server nickname
+// change makes buildNameMap forget the old name — since it's rebuilt from
+// current guild state on every scan — which silently drops that player's past
+// plain-text-mention credit (points/plays/crowns) on the very next rescan.
+// The channel already holds this history in the bot's own prior posts, so no
+// separate persistence is needed to recover it.
+func historicalAliases(botID string, msgs []*discordgo.Message) map[string]string {
+	aliases := map[string]string{}
+	if botID == "" {
+		return aliases
+	}
+	for _, m := range msgs {
+		if m.Author == nil || m.Author.ID != botID {
+			continue
+		}
+		for _, top := range m.Components {
+			container, ok := top.(*discordgo.Container)
+			if !ok {
+				continue
+			}
+			for _, c := range container.Components {
+				section, ok := c.(*discordgo.Section)
+				if !ok {
+					continue
+				}
+				var uid string
+				if thumb, ok := section.Accessory.(*discordgo.Thumbnail); ok {
+					if am := avatarUserIDRe.FindStringSubmatch(thumb.Media.URL); am != nil {
+						uid = am[1]
+					}
+				}
+				if uid == "" {
+					continue
+				}
+				for _, inner := range section.Components {
+					text, ok := inner.(*discordgo.TextDisplay)
+					if !ok {
+						continue
+					}
+					if rm := leaderboardRowRe.FindStringSubmatch(text.Content); rm != nil {
+						aliases[strings.ToLower(rm[1])] = uid
+					}
+				}
+			}
+		}
+	}
+	return aliases
+}
+
 // Refresh re-scans the entire channel history and rebuilds the tally, including
 // FF (started-but-never-finished) detection.
 func (l *Leaderboard) Refresh(s *discordgo.Session, channelID string) error {
@@ -273,6 +378,18 @@ func (l *Leaderboard) Refresh(s *discordgo.Session, channelID string) error {
 		}
 	}
 	name2id := buildNameMap(s, finisherIDs, extraNames)
+
+	// Fill in names dropped by a nickname change with what the player was
+	// called in the bot's own past posts. Current guild state wins on conflict.
+	botID := ""
+	if me, err := s.User("@me"); err == nil {
+		botID = me.ID
+	}
+	for name, uid := range historicalAliases(botID, msgs) {
+		if _, exists := name2id[name]; !exists {
+			name2id[name] = uid
+		}
+	}
 
 	// Second pass (chronological): window the "playing" notices between result
 	// summaries. Each summary reports the prior puzzle, so the starts accumulated

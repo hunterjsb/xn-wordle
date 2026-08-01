@@ -83,6 +83,34 @@ func TestParseResults_PlainTextNames(t *testing.T) {
 	}
 }
 
+func TestParseResults_MultiWordPlainName(t *testing.T) {
+	// A single-token regex would capture only "david" from "@david wolfze" and
+	// leave the rest — and thus the whole name — unresolved even though the
+	// full two-word alias is known.
+	const content = "**Your group is on a 130 day streak!** 🔥🔥🔥 Here are yesterday's results:\n" +
+		"👑 4/6: @bones? <@166272880462528513> @david wolfze\n" +
+		"5/6: @pogoyim <@1054567024422047804>"
+	name2id := map[string]string{
+		"david wolfze": "226858912777764866",
+		"bones?":       "300110170858717184",
+		"pogoyim":      "213709745964580874",
+	}
+
+	got := parseResults(content, name2id)
+	if len(got) != 5 {
+		t.Fatalf("expected 5 finishers, got %d (%v)", len(got), got)
+	}
+	if e := got["226858912777764866"]; e.guesses != 4 || !e.crown {
+		t.Errorf("david wolfze: want 4/crown, got %d/%v", e.guesses, e.crown)
+	}
+	if e := got["300110170858717184"]; e.guesses != 4 || !e.crown {
+		t.Errorf("bones?: want 4/crown, got %d/%v", e.guesses, e.crown)
+	}
+	if e := got["213709745964580874"]; e.guesses != 5 || e.crown {
+		t.Errorf("pogoyim: want 5/no-crown, got %d/%v", e.guesses, e.crown)
+	}
+}
+
 func TestParsePlaying(t *testing.T) {
 	cases := []struct {
 		content   string
