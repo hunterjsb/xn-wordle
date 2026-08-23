@@ -46,7 +46,8 @@ can't undo it. `adjustments.json` is a small, committed ledger of hand-authored
 corrections (each with a date, word, and reason). It's embedded into the binary
 and folded on top of every scan as additive, clamped-at-zero deltas, so a fix
 persists across rescans, stays reversible (delete the entry), and is auditable.
-It currently restores the **TRACE** hole-in-one to its rightful owner.
+It currently reclassifies two copied **TRACE** holes-in-one down to birdies (2/6):
+the copycats keep their win but lose the fraudulent ace and its extra point.
 
 ## Commands
 

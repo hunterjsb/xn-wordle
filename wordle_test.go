@@ -251,36 +251,58 @@ func TestApplyAdjustments_RestoreAndDockWithClamp(t *testing.T) {
 	}
 }
 
-// The TRACE day docks the two confirmed copycats (mr Sigward, LeGozin) who
-// opened with Hunter's giveaway word to fake a 1/6. Channel history shows the
-// scan already credits Hunter his own TRACE ace, so the ledger must NOT also
-// credit him — that would double-count him to two aces for one day.
-func TestCommittedAdjustments_DockTraceThieves(t *testing.T) {
+// The TRACE day softly reclassifies the two confirmed copycats (mr Sigward,
+// LeGozin) who opened with Hunter's giveaway word to fake a 1/6. Instead of
+// docking them a whole day, the ledger reclassifies each fraudulent 1/6 down to a
+// 2/6 birdie: they lose the fraudulent hole-in-one and drop from 6 pts to 5, but
+// KEEP the win — no extra theft penalty. Folded onto the scanned 1/6, the day
+// must resolve exactly like a legitimate 2/6. Channel history shows the scan
+// already credits Hunter his own TRACE ace, so the ledger must NOT touch him.
+func TestCommittedAdjustments_TraceBirdieReclassification(t *testing.T) {
 	const (
 		sigwardID = "1054567024422047804"
 		legozinID = "213709745964580874"
 	)
+
+	// The target: what a legitimate 2/6 birdie contributes for one day.
+	var birdie playerStats
+	creditFinisher(&birdie, dayEntry{guesses: 2})
+
 	adj, err := loadAdjustments()
 	if err != nil {
 		t.Fatalf("committed adjustments.json must parse: %v", err)
 	}
-	docked := map[string]bool{}
+
+	// The ledger must never touch Hunter's own TRACE stats — the scan already has
+	// his ace; any delta on him would double-count (or wrongly dock) it.
 	for _, a := range adj {
 		if !strings.EqualFold(a.Word, "TRACE") {
 			continue
 		}
 		for _, d := range a.Deltas {
-			if d.UserID == hunterID && d.HolesInOne > 0 {
-				t.Fatalf("ledger must not re-credit Hunter's TRACE ace (scan already has it): %+v", d)
-			}
-			if d.HolesInOne < 0 && d.Points < 0 {
-				docked[d.UserID] = true
+			if d.UserID == hunterID && (d.HolesInOne != 0 || d.Points != 0 || d.Wins != 0) {
+				t.Fatalf("ledger must not touch Hunter's TRACE stats (scan already has his ace): %+v", d)
 			}
 		}
 	}
+
 	for _, thief := range []string{sigwardID, legozinID} {
-		if !docked[thief] {
-			t.Fatalf("committed adjustments must dock TRACE thief %s (-hole-in-one, -points)", thief)
+		// Start from the scanned tally: the copycat's TRACE day counted as a 1/6 ace.
+		ps := &playerStats{userID: thief}
+		creditFinisher(ps, dayEntry{guesses: 1})
+		stats := map[string]*playerStats{thief: ps}
+
+		applyAdjustments(stats, adj)
+
+		got := stats[thief]
+		if got.holesInOne != 0 {
+			t.Fatalf("thief %s must lose the fraudulent ace: holesInOne=%d, want 0", thief, got.holesInOne)
+		}
+		if got.wins != 1 {
+			t.Fatalf("thief %s must KEEP the win: wins=%d, want 1", thief, got.wins)
+		}
+		if got.points != birdie.points {
+			t.Fatalf("thief %s must score a 2/6 birdie: points=%d, want %d", thief, got.points, birdie.points)
 		}
 	}
 }
