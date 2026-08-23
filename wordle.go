@@ -203,8 +203,28 @@ type playerStats struct {
 	totalGuess int // sum of guesses (X and FF each count as failGuesses) for averaging
 	wins       int // days solved (guesses <= 6)
 	crowns     int // days with the 👑
+	holesInOne int // days solved on the very first guess — a "hole in one"
 	ff         int // days started but never finished
 	played     int // total days played (finishes + FFs)
+}
+
+// creditFinisher folds one day's finish into a player's running tally. Kept as a
+// standalone step (rather than inline in Refresh) so the scoring rules — including
+// hole-in-one detection — are unit-testable without a live Discord session.
+func creditFinisher(ps *playerStats, e dayEntry) {
+	ps.played++
+	ps.totalGuess += e.guesses
+	ps.points += points(e.guesses)
+	if e.guesses <= 6 {
+		ps.wins++
+	}
+	// A hole in one is a first-guess solve: the day's puzzle cracked on guess 1.
+	if e.guesses == 1 {
+		ps.holesInOne++
+	}
+	if e.crown {
+		ps.crowns++
+	}
 }
 
 func (p playerStats) avg() float64 {
@@ -430,16 +450,7 @@ func (l *Leaderboard) Refresh(s *discordgo.Session, channelID string) error {
 			if entries != nil {
 				days++
 				for uid, e := range entries {
-					ps := get(uid)
-					ps.played++
-					ps.totalGuess += e.guesses
-					ps.points += points(e.guesses)
-					if e.guesses <= 6 {
-						ps.wins++
-					}
-					if e.crown {
-						ps.crowns++
-					}
+					creditFinisher(get(uid), e)
 				}
 				for uid := range started {
 					if _, finished := entries[uid]; !finished {
@@ -462,6 +473,12 @@ func (l *Leaderboard) Refresh(s *discordgo.Session, channelID string) error {
 			}
 		}
 	}
+
+	// Fold in the committed manual corrections. #wordle history is the source of
+	// truth, but a mis-attribution baked into that history (see the TRACE hole-in-one
+	// in adjustments.json) can't be undone by re-scanning — the override layer is
+	// re-applied on every scan so a correction persists instead of being recomputed away.
+	applyCommittedAdjustments(stats)
 
 	l.mu.Lock()
 	l.stats = stats
@@ -489,7 +506,11 @@ func (l *Leaderboard) Ranked() []playerStats {
 		if out[a].avg() != out[b].avg() {
 			return out[a].avg() < out[b].avg()
 		}
-		return out[a].crowns > out[b].crowns
+		if out[a].crowns != out[b].crowns {
+			return out[a].crowns > out[b].crowns
+		}
+		// Deepest tiebreak: more first-guess solves ranks higher.
+		return out[a].holesInOne > out[b].holesInOne
 	})
 	return out
 }

@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Real samples captured from #wordle (XAN NATION).
 const sample93 = "**Your group is on a 93 day streak!** 🔥🔥🔥 Here are yesterday's results:\n" +
@@ -182,6 +185,90 @@ func TestIsPlaying(t *testing.T) {
 	}
 	if isPlaying(sample93) {
 		t.Error("results summary must not be treated as a playing notice")
+	}
+}
+
+// hunterID is Hunter's (.mubs) Discord user ID, the rightful owner of the TRACE
+// hole-in-one. It appears as a real finisher in the samples above.
+const hunterID = "371034483836846090"
+
+func TestCreditFinisher_HoleInOne(t *testing.T) {
+	var ps playerStats
+
+	// A first-guess solve is a hole in one — and still a crowned win worth 6 pts.
+	creditFinisher(&ps, dayEntry{guesses: 1, crown: true})
+	if ps.holesInOne != 1 {
+		t.Fatalf("1/6 should record a hole in one, got %d", ps.holesInOne)
+	}
+	if ps.points != 6 || ps.wins != 1 || ps.crowns != 1 || ps.played != 1 {
+		t.Fatalf("1/6 tally wrong: %+v", ps)
+	}
+
+	// A later, non-first-guess solve counts as a win but NOT a hole in one. Under
+	// the old behavior no hole-in-one stat existed at all; this guards that only a
+	// guess count of exactly 1 increments it.
+	creditFinisher(&ps, dayEntry{guesses: 3})
+	if ps.holesInOne != 1 {
+		t.Fatalf("3/6 must not add a hole in one, got %d", ps.holesInOne)
+	}
+	if ps.wins != 2 {
+		t.Fatalf("3/6 should count as a win, wins=%d", ps.wins)
+	}
+
+	// A miss never counts as a hole in one.
+	creditFinisher(&ps, dayEntry{guesses: failGuesses})
+	if ps.holesInOne != 1 || ps.wins != 2 {
+		t.Fatalf("miss changed hole-in-one/win: %+v", ps)
+	}
+}
+
+func TestApplyAdjustments_RestoreAndDockWithClamp(t *testing.T) {
+	const thief = "999000111"
+	// Thief starts holding the stolen loot; empty-id delta is a placeholder to skip.
+	stats := map[string]*playerStats{
+		thief: {userID: thief, points: 6, holesInOne: 1, wins: 1},
+	}
+	adj := []statAdjustment{{
+		Date: "2026-08-20", Word: "TRACE", Reason: "test",
+		Deltas: []statDelta{
+			{UserID: hunterID, Points: 6, HolesInOne: 1, Wins: 1},
+			{UserID: thief, Points: -9, HolesInOne: -1, Wins: -1}, // over-docks to prove clamp
+			{UserID: "", Points: 100, HolesInOne: 5},              // placeholder — must be skipped
+		},
+	}}
+
+	applyAdjustments(stats, adj)
+
+	if h := stats[hunterID]; h == nil || h.holesInOne != 1 || h.points != 6 || h.wins != 1 {
+		t.Fatalf("Hunter not restored: %+v", stats[hunterID])
+	}
+	if tstat := stats[thief]; tstat.holesInOne != 0 || tstat.points != 0 || tstat.wins != 0 {
+		t.Fatalf("thief not docked/clamped at zero: %+v", tstat)
+	}
+	// The empty-id placeholder must not spawn a phantom player.
+	if len(stats) != 2 {
+		t.Fatalf("empty-id delta created a phantom player: %d entries", len(stats))
+	}
+}
+
+func TestCommittedAdjustments_RestoreTraceToHunter(t *testing.T) {
+	adj, err := loadAdjustments()
+	if err != nil {
+		t.Fatalf("committed adjustments.json must parse: %v", err)
+	}
+	credited := false
+	for _, a := range adj {
+		if !strings.EqualFold(a.Word, "TRACE") {
+			continue
+		}
+		for _, d := range a.Deltas {
+			if d.UserID == hunterID && d.HolesInOne > 0 {
+				credited = true
+			}
+		}
+	}
+	if !credited {
+		t.Fatal("committed adjustments must restore the TRACE hole-in-one to Hunter (.mubs)")
 	}
 }
 

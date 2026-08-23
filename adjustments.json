@@ -1,0 +1,23 @@
+[
+  {
+    "date": "2026-08-20",
+    "word": "TRACE",
+    "reason": "Restore the TRACE hole-in-one (first-guess solve) to its rightful owner, Hunter (.mubs). The app rendered that day's finishers as plain text, and the pre-fix alias resolver (PR #1) non-deterministically handed the 1/6 to another player. That mis-credit is baked into #wordle history, so re-scanning alone can't undo it. This override re-credits .mubs and docks whoever wrongly held it. Fully reversible: delete this entry. To arm the dock, drop the confirmed thief's Discord user ID into the placeholder delta below.",
+    "deltas": [
+      {
+        "user_id": "371034483836846090",
+        "note": "Hunter (.mubs) — rightful TRACE hole-in-one. Restores +1 hole-in-one, +6 pts (a 1/6 is worth 6), and the +1 win the theft cost him.",
+        "points": 6,
+        "holes_in_one": 1,
+        "wins": 1
+      },
+      {
+        "user_id": "",
+        "note": "THIEF — set this to the confirmed Discord user ID of whoever the pre-fix resolver wrongly credited with the TRACE 1/6. The dock strips the stolen loot (-1 hole-in-one, -6 pts, -1 win) plus a -3 pt theft penalty. Left empty on purpose: with no channel dump or logs available to prove the culprit, docking a guessed-at member would wrongly accuse an innocent, so this is a no-op until Hunter confirms the ID.",
+        "points": -9,
+        "holes_in_one": -1,
+        "wins": -1
+      }
+    ]
+  }
+]
