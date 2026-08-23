@@ -102,16 +102,31 @@ func resolvePlainNames(rest string, name2id map[string]string) map[string]bool {
 	}
 
 	type alias struct {
+		name  string
 		words []string
 		id    string
 	}
 	aliases := make([]alias, 0, len(name2id))
 	for name, id := range name2id {
 		if words := strings.Fields(name); len(words) > 0 {
-			aliases = append(aliases, alias{words: words, id: id})
+			aliases = append(aliases, alias{name: name, words: words, id: id})
 		}
 	}
-	sort.Slice(aliases, func(i, j int) bool { return len(aliases[i].words) > len(aliases[j].words) })
+	// Longest alias first so multi-word names claim their tokens before a shorter
+	// overlapping alias can. Break ties on the alias text (then id) so two
+	// equal-length aliases always resolve the same way: without a total order the
+	// greedy match below depends on aliases' arrival order — which is randomized
+	// Go map-iteration order — making a shared-token finisher (and thus a
+	// started-but-flipped player's FF) flip between rescans of identical history.
+	sort.Slice(aliases, func(i, j int) bool {
+		if len(aliases[i].words) != len(aliases[j].words) {
+			return len(aliases[i].words) > len(aliases[j].words)
+		}
+		if aliases[i].name != aliases[j].name {
+			return aliases[i].name < aliases[j].name
+		}
+		return aliases[i].id < aliases[j].id
+	})
 
 	used := make([]bool, len(tokens))
 	resolved := map[string]bool{}
