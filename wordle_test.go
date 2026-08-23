@@ -251,24 +251,37 @@ func TestApplyAdjustments_RestoreAndDockWithClamp(t *testing.T) {
 	}
 }
 
-func TestCommittedAdjustments_RestoreTraceToHunter(t *testing.T) {
+// The TRACE day docks the two confirmed copycats (mr Sigward, LeGozin) who
+// opened with Hunter's giveaway word to fake a 1/6. Channel history shows the
+// scan already credits Hunter his own TRACE ace, so the ledger must NOT also
+// credit him — that would double-count him to two aces for one day.
+func TestCommittedAdjustments_DockTraceThieves(t *testing.T) {
+	const (
+		sigwardID = "1054567024422047804"
+		legozinID = "213709745964580874"
+	)
 	adj, err := loadAdjustments()
 	if err != nil {
 		t.Fatalf("committed adjustments.json must parse: %v", err)
 	}
-	credited := false
+	docked := map[string]bool{}
 	for _, a := range adj {
 		if !strings.EqualFold(a.Word, "TRACE") {
 			continue
 		}
 		for _, d := range a.Deltas {
 			if d.UserID == hunterID && d.HolesInOne > 0 {
-				credited = true
+				t.Fatalf("ledger must not re-credit Hunter's TRACE ace (scan already has it): %+v", d)
+			}
+			if d.HolesInOne < 0 && d.Points < 0 {
+				docked[d.UserID] = true
 			}
 		}
 	}
-	if !credited {
-		t.Fatal("committed adjustments must restore the TRACE hole-in-one to Hunter (.mubs)")
+	for _, thief := range []string{sigwardID, legozinID} {
+		if !docked[thief] {
+			t.Fatalf("committed adjustments must dock TRACE thief %s (-hole-in-one, -points)", thief)
+		}
 	}
 }
 
