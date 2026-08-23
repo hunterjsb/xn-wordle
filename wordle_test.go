@@ -111,6 +111,40 @@ func TestParseResults_MultiWordPlainName(t *testing.T) {
 	}
 }
 
+func TestResolvePlainNames_DeterministicOnOverlap(t *testing.T) {
+	// Two equal-length aliases that share the "guardian" token. Longest-first
+	// sorting can't separate them (same word count), so the greedy matcher's
+	// outcome hinges on alias ordering. That ordering is Go map-iteration order
+	// (randomized per run) fed through an unstable sort, so before the tiebreak
+	// the same finisher fragment resolved to different user IDs across rescans —
+	// flipping a started-but-not-credited player's FF between 0 and 1. Run it many
+	// times: every resolution must be identical.
+	name2id := map[string]string{
+		"temple guardian": "G",
+		"guardian angel":  "A",
+	}
+	const rest = "temple guardian angel"
+
+	first := resolvePlainNames(rest, name2id)
+	for i := 0; i < 1000; i++ {
+		got := resolvePlainNames(rest, name2id)
+		if len(got) != len(first) {
+			t.Fatalf("nondeterministic size: got %v, first %v", got, first)
+		}
+		for id := range first {
+			if !got[id] {
+				t.Fatalf("nondeterministic resolution on run %d: got %v, want %v", i, got, first)
+			}
+		}
+	}
+	// Longest-first still wins for the unambiguous prefix, and the tie is broken
+	// deterministically toward "guardian angel" ("guardian angel" < "temple
+	// guardian"), leaving "temple" unclaimed.
+	if len(first) != 1 || !first["A"] {
+		t.Fatalf("expected stable {A}, got %v", first)
+	}
+}
+
 func TestParsePlaying(t *testing.T) {
 	cases := []struct {
 		content   string
