@@ -253,20 +253,28 @@ func TestApplyAdjustments_RestoreAndDockWithClamp(t *testing.T) {
 
 // The TRACE day softly reclassifies the two confirmed copycats (mr Sigward,
 // LeGozin) who opened with Hunter's giveaway word to fake a 1/6. Instead of
-// docking them a whole day, the ledger reclassifies each fraudulent 1/6 down to a
-// 2/6 birdie: they lose the fraudulent hole-in-one and drop from 6 pts to 5, but
-// KEEP the win — no extra theft penalty. Folded onto the scanned 1/6, the day
-// must resolve exactly like a legitimate 2/6. Channel history shows the scan
-// already credits Hunter his own TRACE ace, so the ledger must NOT touch him.
+// docking them a whole day, the ledger reclassifies ONLY that fraudulent 1/6 down
+// to a 2/6 birdie: -1 hole-in-one (the fake ace) and -1 pt (6->5), win kept.
+//
+// The two copycats are NOT symmetric, and this is the crux of the correction:
+//   - LeGozin's only lifetime ace is the copied TRACE one, so removing it takes
+//     him to 0 ⛳.
+//   - mr Sigward already owns a LEGITIMATE hole-in-one on a different day (the
+//     committed dry-run in the ledger history reads "Sigward 2->1"), so his
+//     scanned tally is TWO aces. Removing only the copied TRACE ace must leave
+//     him at exactly 1 ⛳ — his legit one — NOT 0.
+//
+// The additive -1 delta does the right thing on each real scan (2->1 for Sigward,
+// 1->0 for LeGozin); the danger is a "fix" that reads the ace delta as an absolute
+// "zero him out", which would either strand Sigward at 2 (delta 0) or wrongly wipe
+// his legit ace (over-dock). This test pins the real per-player scans so either
+// mistake fails. Hunter's own TRACE ace is already in the scan, so the ledger must
+// NOT touch him.
 func TestCommittedAdjustments_TraceBirdieReclassification(t *testing.T) {
 	const (
 		sigwardID = "1054567024422047804"
 		legozinID = "213709745964580874"
 	)
-
-	// The target: what a legitimate 2/6 birdie contributes for one day.
-	var birdie playerStats
-	creditFinisher(&birdie, dayEntry{guesses: 2})
 
 	adj, err := loadAdjustments()
 	if err != nil {
@@ -286,24 +294,44 @@ func TestCommittedAdjustments_TraceBirdieReclassification(t *testing.T) {
 		}
 	}
 
-	for _, thief := range []string{sigwardID, legozinID} {
-		// Start from the scanned tally: the copycat's TRACE day counted as a 1/6 ace.
-		ps := &playerStats{userID: thief}
-		creditFinisher(ps, dayEntry{guesses: 1})
-		stats := map[string]*playerStats{thief: ps}
+	// mr Sigward — real scan is TWO aces (a legit one on another day + the copied
+	// TRACE one). After the dock he must keep exactly his legit ace.
+	sig := &playerStats{userID: sigwardID}
+	creditFinisher(sig, dayEntry{guesses: 1, crown: true}) // legit hole-in-one, a different day
+	creditFinisher(sig, dayEntry{guesses: 1, crown: true}) // the copied TRACE ace
+	// LeGozin — real scan is ONE ace (only the copied TRACE one).
+	leg := &playerStats{userID: legozinID}
+	creditFinisher(leg, dayEntry{guesses: 1, crown: true}) // the copied TRACE ace
 
-		applyAdjustments(stats, adj)
+	stats := map[string]*playerStats{sigwardID: sig, legozinID: leg}
+	applyAdjustments(stats, adj)
 
-		got := stats[thief]
-		if got.holesInOne != 0 {
-			t.Fatalf("thief %s must lose the fraudulent ace: holesInOne=%d, want 0", thief, got.holesInOne)
-		}
-		if got.wins != 1 {
-			t.Fatalf("thief %s must KEEP the win: wins=%d, want 1", thief, got.wins)
-		}
-		if got.points != birdie.points {
-			t.Fatalf("thief %s must score a 2/6 birdie: points=%d, want %d", thief, got.points, birdie.points)
-		}
+	// mr Sigward: legit ace kept, copied ace reclassified to a 2/6 birdie.
+	gotSig := stats[sigwardID]
+	if gotSig.holesInOne != 1 {
+		t.Fatalf("mr Sigward must keep his ONE legit ace and lose only the copied TRACE ace: holesInOne=%d, want 1", gotSig.holesInOne)
+	}
+	if gotSig.wins != 2 {
+		t.Fatalf("mr Sigward must KEEP both wins: wins=%d, want 2", gotSig.wins)
+	}
+	// legit 1/6 (6 pts) + copied ace reclassified to a 2/6 birdie (5 pts) = 11.
+	if wantPts := points(1) + points(2); gotSig.points != wantPts {
+		t.Fatalf("mr Sigward points wrong: got %d, want %d (legit ace + birdie)", gotSig.points, wantPts)
+	}
+
+	// LeGozin: his only ace was the copied one, so he drops to zero and the day
+	// resolves exactly like a lone legitimate 2/6 birdie.
+	var birdie playerStats
+	creditFinisher(&birdie, dayEntry{guesses: 2})
+	gotLeg := stats[legozinID]
+	if gotLeg.holesInOne != 0 {
+		t.Fatalf("LeGozin must lose his only (copied) ace: holesInOne=%d, want 0", gotLeg.holesInOne)
+	}
+	if gotLeg.wins != 1 {
+		t.Fatalf("LeGozin must KEEP the win: wins=%d, want 1", gotLeg.wins)
+	}
+	if gotLeg.points != birdie.points {
+		t.Fatalf("LeGozin must score a lone 2/6 birdie: points=%d, want %d", gotLeg.points, birdie.points)
 	}
 }
 
