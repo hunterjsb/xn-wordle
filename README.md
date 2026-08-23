@@ -31,9 +31,23 @@ on startup it backfills the full history, then re-scans every 15 minutes.
 An **FF** ("failure to finish") — a player started the puzzle but never finished
 it — is scored exactly like an `X/6`: a failed puzzle worth 0 points.
 
+A **hole in one** (⛳) is a first-guess solve — the puzzle cracked on guess 1.
+It's tracked as a permanent per-player counter and shown on the leaderboard.
+
 `/leaderboard` ranks by total **Pts** (tie-break: lowest average guesses, then
-most crowns) and shows points, average guesses, 👑 crowns (daily wins), FF, win %,
-and days played.
+most crowns, then most holes-in-one) and shows points, average guesses, 👑 crowns
+(daily wins), ⛳ holes-in-one, FF, win %, and days played.
+
+## Corrections
+
+The channel is the database, but the Wordle app sometimes renders finishers as
+plain text and a mis-attribution can get baked into history — a re-scan alone
+can't undo it. `adjustments.json` is a small, committed ledger of hand-authored
+corrections (each with a date, word, and reason). It's embedded into the binary
+and folded on top of every scan as additive, clamped-at-zero deltas, so a fix
+persists across rescans, stays reversible (delete the entry), and is auditable.
+It currently reclassifies two copied **TRACE** holes-in-one down to birdies (2/6):
+the copycats keep their win but lose the fraudulent ace and its extra point.
 
 ## Commands
 

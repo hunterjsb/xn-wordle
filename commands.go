@@ -139,8 +139,8 @@ func buildLeaderboardContainers(s *discordgo.Session) ([]*discordgo.Container, b
 			if idx < len(medals) {
 				rank = medals[idx]
 			}
-			text := fmt.Sprintf("### %s %s\n%d pts  ·  %.2f avg  ·  %d 👑  ·  %d FF  ·  %.0f%% won  ·  %d played",
-				rank, resolveName(s, p.userID), p.points, p.avg(), p.crowns, p.ff, p.winPct(), p.played)
+			text := fmt.Sprintf("### %s %s\n%d pts  ·  %.2f avg  ·  %d 👑  ·  %d ⛳  ·  %d FF  ·  %.0f%% won  ·  %d played",
+				rank, resolveName(s, p.userID), p.points, p.avg(), p.crowns, p.holesInOne, p.ff, p.winPct(), p.played)
 			section := discordgo.Section{
 				Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: text}},
 			}
@@ -156,7 +156,7 @@ func buildLeaderboardContainers(s *discordgo.Session) ([]*discordgo.Container, b
 			container.Components = append(container.Components,
 				discordgo.Separator{},
 				discordgo.TextDisplay{Content: fmt.Sprintf(
-					"-# %d days · Pts 1/6=6 … 6/6=1, X=0 · 👑 daily wins · FF = started but didn't finish",
+					"-# %d days · Pts 1/6=6 … 6/6=1, X=0 · 👑 daily wins · ⛳ hole in one (first-guess solve) · FF = started but didn't finish",
 					board.Days())},
 			)
 		}
@@ -174,14 +174,14 @@ func renderLeaderboard(s *discordgo.Session) (string, bool) {
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-2s %-14s %4s %5s %5s %4s %5s %4s\n", "#", "Player", "Pts", "Avg", "Crwn", "FF", "Win%", "Pld")
+	fmt.Fprintf(&b, "%-2s %-14s %4s %5s %5s %4s %4s %5s %4s\n", "#", "Player", "Pts", "Avg", "Crwn", "HI1", "FF", "Win%", "Pld")
 	for idx, p := range ranked {
 		name := resolveName(s, p.userID)
 		if len(name) > 14 {
 			name = name[:14]
 		}
-		fmt.Fprintf(&b, "%-2d %-14s %4d %5.2f %5d %4d %4.0f%% %4d\n",
-			idx+1, name, p.points, p.avg(), p.crowns, p.ff, p.winPct(), p.played)
+		fmt.Fprintf(&b, "%-2d %-14s %4d %5.2f %5d %4d %4d %4.0f%% %4d\n",
+			idx+1, name, p.points, p.avg(), p.crowns, p.holesInOne, p.ff, p.winPct(), p.played)
 	}
 	return b.String(), true
 }

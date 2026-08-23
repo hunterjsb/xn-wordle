@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Real samples captured from #wordle (XAN NATION).
 const sample93 = "**Your group is on a 93 day streak!** 🔥🔥🔥 Here are yesterday's results:\n" +
@@ -182,6 +185,125 @@ func TestIsPlaying(t *testing.T) {
 	}
 	if isPlaying(sample93) {
 		t.Error("results summary must not be treated as a playing notice")
+	}
+}
+
+// hunterID is Hunter's (.mubs) Discord user ID, the rightful owner of the TRACE
+// hole-in-one. It appears as a real finisher in the samples above.
+const hunterID = "371034483836846090"
+
+func TestCreditFinisher_HoleInOne(t *testing.T) {
+	var ps playerStats
+
+	// A first-guess solve is a hole in one — and still a crowned win worth 6 pts.
+	creditFinisher(&ps, dayEntry{guesses: 1, crown: true})
+	if ps.holesInOne != 1 {
+		t.Fatalf("1/6 should record a hole in one, got %d", ps.holesInOne)
+	}
+	if ps.points != 6 || ps.wins != 1 || ps.crowns != 1 || ps.played != 1 {
+		t.Fatalf("1/6 tally wrong: %+v", ps)
+	}
+
+	// A later, non-first-guess solve counts as a win but NOT a hole in one. Under
+	// the old behavior no hole-in-one stat existed at all; this guards that only a
+	// guess count of exactly 1 increments it.
+	creditFinisher(&ps, dayEntry{guesses: 3})
+	if ps.holesInOne != 1 {
+		t.Fatalf("3/6 must not add a hole in one, got %d", ps.holesInOne)
+	}
+	if ps.wins != 2 {
+		t.Fatalf("3/6 should count as a win, wins=%d", ps.wins)
+	}
+
+	// A miss never counts as a hole in one.
+	creditFinisher(&ps, dayEntry{guesses: failGuesses})
+	if ps.holesInOne != 1 || ps.wins != 2 {
+		t.Fatalf("miss changed hole-in-one/win: %+v", ps)
+	}
+}
+
+func TestApplyAdjustments_RestoreAndDockWithClamp(t *testing.T) {
+	const thief = "999000111"
+	// Thief starts holding the stolen loot; empty-id delta is a placeholder to skip.
+	stats := map[string]*playerStats{
+		thief: {userID: thief, points: 6, holesInOne: 1, wins: 1},
+	}
+	adj := []statAdjustment{{
+		Date: "2026-08-20", Word: "TRACE", Reason: "test",
+		Deltas: []statDelta{
+			{UserID: hunterID, Points: 6, HolesInOne: 1, Wins: 1},
+			{UserID: thief, Points: -9, HolesInOne: -1, Wins: -1}, // over-docks to prove clamp
+			{UserID: "", Points: 100, HolesInOne: 5},              // placeholder — must be skipped
+		},
+	}}
+
+	applyAdjustments(stats, adj)
+
+	if h := stats[hunterID]; h == nil || h.holesInOne != 1 || h.points != 6 || h.wins != 1 {
+		t.Fatalf("Hunter not restored: %+v", stats[hunterID])
+	}
+	if tstat := stats[thief]; tstat.holesInOne != 0 || tstat.points != 0 || tstat.wins != 0 {
+		t.Fatalf("thief not docked/clamped at zero: %+v", tstat)
+	}
+	// The empty-id placeholder must not spawn a phantom player.
+	if len(stats) != 2 {
+		t.Fatalf("empty-id delta created a phantom player: %d entries", len(stats))
+	}
+}
+
+// The TRACE day softly reclassifies the two confirmed copycats (mr Sigward,
+// LeGozin) who opened with Hunter's giveaway word to fake a 1/6. Instead of
+// docking them a whole day, the ledger reclassifies each fraudulent 1/6 down to a
+// 2/6 birdie: they lose the fraudulent hole-in-one and drop from 6 pts to 5, but
+// KEEP the win — no extra theft penalty. Folded onto the scanned 1/6, the day
+// must resolve exactly like a legitimate 2/6. Channel history shows the scan
+// already credits Hunter his own TRACE ace, so the ledger must NOT touch him.
+func TestCommittedAdjustments_TraceBirdieReclassification(t *testing.T) {
+	const (
+		sigwardID = "1054567024422047804"
+		legozinID = "213709745964580874"
+	)
+
+	// The target: what a legitimate 2/6 birdie contributes for one day.
+	var birdie playerStats
+	creditFinisher(&birdie, dayEntry{guesses: 2})
+
+	adj, err := loadAdjustments()
+	if err != nil {
+		t.Fatalf("committed adjustments.json must parse: %v", err)
+	}
+
+	// The ledger must never touch Hunter's own TRACE stats — the scan already has
+	// his ace; any delta on him would double-count (or wrongly dock) it.
+	for _, a := range adj {
+		if !strings.EqualFold(a.Word, "TRACE") {
+			continue
+		}
+		for _, d := range a.Deltas {
+			if d.UserID == hunterID && (d.HolesInOne != 0 || d.Points != 0 || d.Wins != 0) {
+				t.Fatalf("ledger must not touch Hunter's TRACE stats (scan already has his ace): %+v", d)
+			}
+		}
+	}
+
+	for _, thief := range []string{sigwardID, legozinID} {
+		// Start from the scanned tally: the copycat's TRACE day counted as a 1/6 ace.
+		ps := &playerStats{userID: thief}
+		creditFinisher(ps, dayEntry{guesses: 1})
+		stats := map[string]*playerStats{thief: ps}
+
+		applyAdjustments(stats, adj)
+
+		got := stats[thief]
+		if got.holesInOne != 0 {
+			t.Fatalf("thief %s must lose the fraudulent ace: holesInOne=%d, want 0", thief, got.holesInOne)
+		}
+		if got.wins != 1 {
+			t.Fatalf("thief %s must KEEP the win: wins=%d, want 1", thief, got.wins)
+		}
+		if got.points != birdie.points {
+			t.Fatalf("thief %s must score a 2/6 birdie: points=%d, want %d", thief, got.points, birdie.points)
+		}
 	}
 }
 
